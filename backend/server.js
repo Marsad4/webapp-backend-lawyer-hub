@@ -8,6 +8,16 @@ const path = require('path');
 const authRoutes = require('./routes/userAuth');
 const bookRoutes = require('./routes/books');
 const chatRoutes = require("./routes/chat");
+const userRoutes = require('./routes/users');
+
+let kycRoutes;
+try {
+  kycRoutes = require('./routes/kyc');
+  console.log('✅ KYC routes loaded successfully');
+} catch (err) {
+  console.error('❌ Error loading KYC routes:', err);
+  throw err;
+}
 
 const app = express();
 
@@ -32,6 +42,9 @@ app.use('/api/auth', authRoutes);
 // 2. Book routes will be at: http://.../api/books
 app.use('/api/books', bookRoutes);
 app.use("/api/chats", chatRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/kyc', kycRoutes);
+console.log('✅ KYC routes mounted at /api/kyc');
 
 // Start Server
 const PORT = process.env.PORT || 4000;
