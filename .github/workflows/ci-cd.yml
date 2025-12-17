@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-test
     env:
-      IMAGE_REGISTRY: ${{ secrets.REGISTRY }}
+      IMAGE_REGISTRY: ${{ secrets.REGISTRY }}                 # should be docker.io/<your-username>
       FRONTEND_IMAGE: ${{ secrets.REGISTRY }}/finaldevops-frontend
       BACKEND_IMAGE: ${{ secrets.REGISTRY }}/finaldevops-backend
     steps:
@@ -81,12 +81,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Login to registry
+      - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
-          registry: ${{ env.IMAGE_REGISTRY }}
+          registry: docker.io                       # <-- IMPORTANT: host only
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Debug: show tags (no secrets)
+        run: |
+          echo "IMAGE_REGISTRY = $IMAGE_REGISTRY"
+          echo "BACKEND_IMAGE = $BACKEND_IMAGE"
+          echo "FRONTEND_IMAGE = $FRONTEND_IMAGE"
 
       - name: Build and push backend image
         uses: docker/build-push-action@v4
@@ -172,4 +178,3 @@ jobs:
 
       - name: Deployment finished
         run: echo "Deployment step completed"
-
