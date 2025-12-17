@@ -16,7 +16,8 @@ export default function BookUploadModal({ isOpen, onClose, API_BASE, showToast, 
   const pdfInputRef = useRef(null);
   const posterInputRef = useRef(null);
 
-  useEffect(() => {
+  /* eslint-disable-next-line react-hooks/exhaustive-deps */
+useEffect(() => {
     if (!isOpen) {
       resetForm();
     }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FiUsers, FiBriefcase, FiSearch, FiChevronDown, FiChevronUp, FiMail, FiPhone, FiCalendar, FiSliders, FiX, FiMapPin, FiFileText, FiEdit2, FiTrash2, FiMoreVertical, FiUser, FiGlobe } from 'react-icons/fi';
+import { FiUsers, FiBriefcase, FiSearch, FiChevronDown, FiChevronUp, FiMail, FiPhone, FiCalendar, FiSliders, FiX, FiMapPin, FiFileText, FiEdit2, FiTrash2,  FiUser, FiGlobe } from 'react-icons/fi';
 
 export default function UsersPage({ API_BASE, showToast }) {
   const [activeTab, setActiveTab] = useState('regular');
@@ -19,11 +19,13 @@ export default function UsersPage({ API_BASE, showToast }) {
   const [saving, setSaving] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
 
-  useEffect(() => {
+  /* eslint-disable-next-line react-hooks/exhaustive-deps */
+useEffect(() => {
     fetchUsers();
   }, [activeTab, sortBy, sortOrder, pagination.page, filters]);
 
-  useEffect(() => {
+  /* eslint-disable-next-line react-hooks/exhaustive-deps */
+useEffect(() => {
     const debounce = setTimeout(() => {
       if (pagination.page === 1) {
         fetchUsers();

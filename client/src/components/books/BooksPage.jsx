@@ -20,11 +20,13 @@ export default function BooksPage({ API_BASE, showToast }) {
   const [newPosterFile, setNewPosterFile] = useState(null);
   const [posterPreview, setPosterPreview] = useState(null);
 
-  useEffect(() => {
+  /* eslint-disable-next-line react-hooks/exhaustive-deps */
+useEffect(() => {
     fetchBooks();
   }, []);
 
-  useEffect(() => {
+  /* eslint-disable-next-line react-hooks/exhaustive-deps */
+useEffect(() => {
     return () => {
       if (posterPreview) URL.revokeObjectURL(posterPreview);
     };

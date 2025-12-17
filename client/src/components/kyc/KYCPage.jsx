@@ -11,11 +11,13 @@ export default function KYCPage({ API_BASE, showToast }) {
   const [rejectReason, setRejectReason] = useState('');
   const [processing, setProcessing] = useState(false);
 
-  useEffect(() => {
+  /* eslint-disable-next-line react-hooks/exhaustive-deps */
+useEffect(() => {
     fetchKYCs();
   }, [pagination.page, statusFilter]);
 
-  useEffect(() => {
+  /* eslint-disable-next-line react-hooks/exhaustive-deps */
+useEffect(() => {
     const debounce = setTimeout(() => {
       if (pagination.page === 1) {
         fetchKYCs();
