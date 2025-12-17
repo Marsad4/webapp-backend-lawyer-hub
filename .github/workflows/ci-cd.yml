@@ -88,7 +88,6 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Debug: show tags (no secrets)
         run: |
           echo "IMAGE_REGISTRY = $IMAGE_REGISTRY"
           echo "BACKEND_IMAGE = $BACKEND_IMAGE"
