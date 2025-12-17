@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { FiShield, FiSearch, FiCheck, FiX, FiFileText, FiDownload, FiCalendar, FiUser, FiEye } from 'react-icons/fi';
 
 export default function KYCPage({ API_BASE, showToast }) {
@@ -11,59 +11,73 @@ export default function KYCPage({ API_BASE, showToast }) {
   const [rejectReason, setRejectReason] = useState('');
   const [processing, setProcessing] = useState(false);
 
-  /* eslint-disable-next-line react-hooks/exhaustive-deps */
-useEffect(() => {
-    fetchKYCs();
-  }, [pagination.page, statusFilter]);
+  // Stable fetch function that accepts explicit params (prevents eslint missing-deps)
+  const fetchKYCs = useCallback(
+    async ({ page, limit, status, searchTerm } = {}) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: String(page ?? pagination.page),
+          limit: String(limit ?? pagination.limit),
+          ...(status ? { status } : {}),
+          ...(searchTerm ? { search: searchTerm } : {})
+        });
 
-  /* eslint-disable-next-line react-hooks/exhaustive-deps */
-useEffect(() => {
+        const res = await fetch(`${API_BASE}/api/kyc?${params.toString()}`);
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to fetch KYC requests');
+        }
+
+        const data = await res.json();
+        setKycs(data.kycs || []);
+        setPagination(prev => ({ ...prev, ...data.pagination }));
+      } catch (err) {
+        console.error(err);
+        showToast && showToast('error', err.message || 'Failed to load KYC requests');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [API_BASE, showToast, pagination.limit, pagination.page] // safe: these are used as fallbacks only
+  );
+
+  // Primary effect: run when page or statusFilter or pagination.limit changes
+  useEffect(() => {
+    fetchKYCs({
+      page: pagination.page,
+      limit: pagination.limit,
+      status: statusFilter,
+      searchTerm: search
+    });
+    // fetchKYCs is stable (useCallback) so it's safe to include
+  }, [fetchKYCs, pagination.page, pagination.limit, statusFilter, search]);
+
+  // Debounced search: when search changes, reset page to 1 or fetch directly
+  useEffect(() => {
     const debounce = setTimeout(() => {
       if (pagination.page === 1) {
-        fetchKYCs();
+        fetchKYCs({
+          page: 1,
+          limit: pagination.limit,
+          status: statusFilter,
+          searchTerm: search
+        });
       } else {
         setPagination(prev => ({ ...prev, page: 1 }));
       }
     }, 500);
 
     return () => clearTimeout(debounce);
-  }, [search]);
-
-  async function fetchKYCs() {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: pagination.page,
-        limit: pagination.limit,
-        ...(statusFilter && { status: statusFilter })
-      });
-
-      const res = await fetch(`${API_BASE}/api/kyc?${params}`);
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to fetch KYC requests');
-      }
-
-      const data = await res.json();
-      setKycs(data.kycs || []);
-      setPagination(prev => ({ ...prev, ...data.pagination }));
-    } catch (err) {
-      console.error(err);
-      showToast && showToast('error', err.message || 'Failed to load KYC requests');
-    } finally {
-      setLoading(false);
-    }
-  }
+  }, [search, pagination.page, pagination.limit, statusFilter, fetchKYCs]);
 
   const handleAccept = async (kycId) => {
     setProcessing(true);
     try {
       const res = await fetch(`${API_BASE}/api/kyc/${kycId}/accept`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Content-Type': 'application/json' }
       });
 
       const errorData = await res.json().catch(() => ({}));
@@ -73,7 +87,8 @@ useEffect(() => {
       }
 
       showToast && showToast('success', 'KYC accepted successfully');
-      fetchKYCs();
+      // refresh
+      fetchKYCs({ page: pagination.page, limit: pagination.limit, status: statusFilter, searchTerm: search });
     } catch (err) {
       console.error('Accept error:', err);
       showToast && showToast('error', err.message || 'Failed to accept KYC');
@@ -92,9 +107,7 @@ useEffect(() => {
     try {
       const res = await fetch(`${API_BASE}/api/kyc/${rejectModal}/reject`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: rejectReason.trim() })
       });
 
@@ -107,7 +120,7 @@ useEffect(() => {
       showToast && showToast('success', 'KYC rejected successfully');
       setRejectModal(null);
       setRejectReason('');
-      fetchKYCs();
+      fetchKYCs({ page: pagination.page, limit: pagination.limit, status: statusFilter, searchTerm: search });
     } catch (err) {
       console.error('Reject error:', err);
       showToast && showToast('error', err.message || 'Failed to reject KYC');
@@ -414,3 +427,4 @@ useEffect(() => {
     </>
   );
 }
+

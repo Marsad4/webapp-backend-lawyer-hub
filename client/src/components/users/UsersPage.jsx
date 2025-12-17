@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { FiUsers, FiBriefcase, FiSearch, FiChevronDown, FiChevronUp, FiMail, FiPhone, FiCalendar, FiSliders, FiX, FiMapPin, FiFileText, FiEdit2, FiTrash2,  FiUser, FiGlobe } from 'react-icons/fi';
+import React, { useEffect, useState, useCallback } from 'react';
+import { FiUsers, FiBriefcase, FiSearch, FiChevronDown, FiChevronUp, FiMail, FiPhone, FiCalendar, FiSliders, FiX, FiMapPin, FiFileText, FiEdit2, FiTrash2,  FiUser } from 'react-icons/fi';
 
 export default function UsersPage({ API_BASE, showToast }) {
   const [activeTab, setActiveTab] = useState('regular');
@@ -19,62 +19,90 @@ export default function UsersPage({ API_BASE, showToast }) {
   const [saving, setSaving] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
 
-  /* eslint-disable-next-line react-hooks/exhaustive-deps */
-useEffect(() => {
-    fetchUsers();
-  }, [activeTab, sortBy, sortOrder, pagination.page, filters]);
+  const hasActiveFilters = Boolean(filters.role);
 
-  /* eslint-disable-next-line react-hooks/exhaustive-deps */
-useEffect(() => {
+  const SortIcon = ({ field }) => {
+    if (sortBy !== field) return null;
+    return sortOrder === 'asc' ? <FiChevronUp className="text-xs" /> : <FiChevronDown className="text-xs" />;
+  };
+
+  // fetchUsers is stable and requires explicit parameters so it doesn't capture mutable state
+  const fetchUsers = useCallback(
+    async ({ page, limit, sortByParam, sortOrderParam, searchParam, filtersParam, tabParam }) => {
+      setLoading(true);
+      try {
+        const endpoint = (tabParam === 'regular') ? '/regular' : '/lawyers';
+        const params = new URLSearchParams({
+          page: String(page),
+          limit: String(limit),
+          sortBy: sortByParam || '',
+          sortOrder: sortOrderParam || '',
+          search: (searchParam || '').trim(),
+          ...(filtersParam && filtersParam.role ? { role: filtersParam.role } : {})
+        });
+
+        const res = await fetch(`${API_BASE}/api/users${endpoint}?${params.toString()}`);
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to fetch users');
+        }
+
+        const data = await res.json();
+        setUsers(data.users || []);
+        setPagination(prev => ({ ...prev, ...data.pagination }));
+      } catch (err) {
+        console.error(err);
+        showToast && showToast('error', err.message || 'Failed to load users');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [API_BASE, showToast]
+  );
+
+  // Primary effect: reload when these controls change
+  useEffect(() => {
+    fetchUsers({
+      page: pagination.page,
+      limit: pagination.limit,
+      sortByParam: sortBy,
+      sortOrderParam: sortOrder,
+      searchParam: search,
+      filtersParam: filters,
+      tabParam: activeTab
+    });
+  }, [activeTab, sortBy, sortOrder, pagination.page, filters, fetchUsers, pagination.limit, search]);
+
+  // Debounced search effect: when search changes, reset page to 1 or fetch if already on page 1
+  useEffect(() => {
     const debounce = setTimeout(() => {
       if (pagination.page === 1) {
-        fetchUsers();
+        fetchUsers({
+          page: 1,
+          limit: pagination.limit,
+          sortByParam: sortBy,
+          sortOrderParam: sortOrder,
+          searchParam: search,
+          filtersParam: filters,
+          tabParam: activeTab
+        });
       } else {
         setPagination(prev => ({ ...prev, page: 1 }));
       }
     }, 500);
 
     return () => clearTimeout(debounce);
-  }, [search]);
-
-  async function fetchUsers() {
-    setLoading(true);
-    try {
-      const endpoint = activeTab === 'regular' ? '/regular' : '/lawyers';
-      const params = new URLSearchParams({
-        page: pagination.page,
-        limit: pagination.limit,
-        sortBy,
-        sortOrder,
-        search: search.trim(),
-        ...(filters.role && { role: filters.role })
-      });
-
-      const res = await fetch(`${API_BASE}/api/users${endpoint}?${params}`);
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to fetch users');
-      }
-      
-      const data = await res.json();
-      setUsers(data.users || []);
-      setPagination(prev => ({ ...prev, ...data.pagination }));
-    } catch (err) {
-      console.error(err);
-      showToast && showToast('error', err.message || 'Failed to load users');
-    } finally {
-      setLoading(false);
-    }
-  }
+  }, [search, pagination.page, pagination.limit, sortBy, sortOrder, filters, activeTab, fetchUsers]);
 
   const handleSort = (field) => {
     if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+      setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortBy(field);
       setSortOrder('desc');
     }
+    setPagination(prev => ({ ...prev, page: 1 }));
   };
 
   const handleFilterChange = (key, value) => {
@@ -85,13 +113,6 @@ useEffect(() => {
   const clearFilters = () => {
     setFilters({ role: '' });
     setPagination(prev => ({ ...prev, page: 1 }));
-  };
-
-  const hasActiveFilters = filters.role;
-
-  const SortIcon = ({ field }) => {
-    if (sortBy !== field) return null;
-    return sortOrder === 'asc' ? <FiChevronUp className="text-xs" /> : <FiChevronDown className="text-xs" />;
   };
 
   const handleEdit = (user) => {
@@ -125,14 +146,10 @@ useEffect(() => {
 
       const endpoint = activeTab === 'regular' ? '/regular' : '/lawyers';
       const url = `${API_BASE}/api/users${endpoint}/${userId}`;
-      
-      console.log('Deleting user:', url);
-      
+
       const res = await fetch(url, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Content-Type': 'application/json' }
       });
 
       const errorData = await res.json().catch(() => ({}));
@@ -143,7 +160,17 @@ useEffect(() => {
 
       showToast && showToast('success', 'User deleted successfully');
       setDeleteConfirm(null);
-      fetchUsers();
+
+      // refresh list with current controls
+      fetchUsers({
+        page: pagination.page,
+        limit: pagination.limit,
+        sortByParam: sortBy,
+        sortOrderParam: sortOrder,
+        searchParam: search,
+        filtersParam: filters,
+        tabParam: activeTab
+      });
     } catch (err) {
       console.error('Delete error:', err);
       showToast && showToast('error', err.message || 'Failed to delete user');
@@ -159,20 +186,16 @@ useEffect(() => {
 
       const endpoint = activeTab === 'regular' ? '/regular' : '/lawyers';
       const updateData = { ...formData };
-      
+
       if (activeTab === 'lawyers' && updateData.practiceAreas) {
-        updateData.practiceAreas = updateData.practiceAreas.split(',').map(a => a.trim()).filter(a => a);
+        updateData.practiceAreas = updateData.practiceAreas.split(',').map(a => a.trim()).filter(Boolean);
       }
 
       const url = `${API_BASE}/api/users${endpoint}/${editingUser._id}`;
-      
-      console.log('Updating user:', url, updateData);
 
       const res = await fetch(url, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData)
       });
 
@@ -185,7 +208,17 @@ useEffect(() => {
       showToast && showToast('success', 'User updated successfully');
       setEditingUser(null);
       setFormData({});
-      fetchUsers();
+
+      // refresh list after update
+      fetchUsers({
+        page: pagination.page,
+        limit: pagination.limit,
+        sortByParam: sortBy,
+        sortOrderParam: sortOrder,
+        searchParam: search,
+        filtersParam: filters,
+        tabParam: activeTab
+      });
     } catch (err) {
       console.error('Update error:', err);
       showToast && showToast('error', err.message || 'Failed to update user');
@@ -454,8 +487,8 @@ useEffect(() => {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {users.map((user) => (
-                  <tr 
-                    key={user._id} 
+                  <tr
+                    key={user._id}
                     onClick={() => setSelectedUser(user)}
                     className="hover:bg-gray-50/50 transition-colors cursor-pointer"
                   >
@@ -486,9 +519,7 @@ useEffect(() => {
                         <td className="px-4 py-2.5">
                           <span
                             className={`inline-flex px-2.5 py-1 text-xs font-medium rounded-md ${
-                              user.isAdmin
-                                ? 'bg-purple-50 text-purple-700'
-                                : 'bg-gray-100 text-gray-700'
+                              user.isAdmin ? 'bg-purple-50 text-purple-700' : 'bg-gray-100 text-gray-700'
                             }`}
                           >
                             {user.isAdmin ? 'Admin' : 'User'}
@@ -547,10 +578,7 @@ useEffect(() => {
                             <div className="max-h-16 overflow-y-auto scrollbar-hide">
                               <div className="flex flex-wrap gap-1">
                                 {user.practiceAreas.map((area, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="inline-flex px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-md"
-                                  >
+                                  <span key={idx} className="inline-flex px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-md">
                                     {area}
                                   </span>
                                 ))}
@@ -681,7 +709,7 @@ useEffect(() => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
                     <input
                       type="text"
-                      value={formData.fullName}
+                      value={formData.fullName || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
                     />
@@ -690,7 +718,7 @@ useEffect(() => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
                     <input
                       type="text"
-                      value={formData.username}
+                      value={formData.username || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
                     />
@@ -699,7 +727,7 @@ useEffect(() => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
                     <input
                       type="email"
-                      value={formData.email}
+                      value={formData.email || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
                     />
@@ -708,7 +736,7 @@ useEffect(() => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
                     <input
                       type="text"
-                      value={formData.phone}
+                      value={formData.phone || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
                     />
@@ -716,7 +744,7 @@ useEffect(() => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
                     <select
-                      value={formData.isAdmin ? 'admin' : 'user'}
+                      value={(formData.isAdmin ? 'admin' : 'user')}
                       onChange={(e) => setFormData(prev => ({ ...prev, isAdmin: e.target.value === 'admin' }))}
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
                     >
@@ -731,7 +759,7 @@ useEffect(() => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
                     <input
                       type="text"
-                      value={formData.name}
+                      value={formData.name || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
                     />
@@ -740,7 +768,7 @@ useEffect(() => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
                     <input
                       type="email"
-                      value={formData.email}
+                      value={formData.email || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
                     />
@@ -749,7 +777,7 @@ useEffect(() => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
                     <input
                       type="text"
-                      value={formData.phone}
+                      value={formData.phone || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
                     />
@@ -758,7 +786,7 @@ useEffect(() => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Practice Areas (comma-separated)</label>
                     <input
                       type="text"
-                      value={formData.practiceAreas}
+                      value={formData.practiceAreas || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, practiceAreas: e.target.value }))}
                       placeholder="e.g. Criminal Law, Family Law"
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
@@ -767,7 +795,7 @@ useEffect(() => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Office Address</label>
                     <textarea
-                      value={formData.officeAddress}
+                      value={formData.officeAddress || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, officeAddress: e.target.value }))}
                       rows="3"
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all resize-none"
@@ -776,7 +804,7 @@ useEffect(() => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Bio</label>
                     <textarea
-                      value={formData.bio}
+                      value={formData.bio || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, bio: e.target.value }))}
                       rows="3"
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all resize-none"
@@ -785,7 +813,7 @@ useEffect(() => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
                     <select
-                      value={formData.role}
+                      value={formData.role || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
                     >
@@ -849,11 +877,11 @@ useEffect(() => {
 
       {/* User Detail Card Modal */}
       {selectedUser && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           onClick={() => setSelectedUser(null)}
         >
-          <div 
+          <div
             className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto scrollbar-hide"
             onClick={(e) => e.stopPropagation()}
           >
@@ -873,7 +901,7 @@ useEffect(() => {
                       {activeTab === 'regular' ? selectedUser.fullName : selectedUser.name}
                     </h2>
                     <p className="text-sm text-gray-600 mt-1">
-                      {activeTab === 'regular' ? `@${selectedUser.username}` : selectedUser.role || 'Lawyer'}
+                      {activeTab === 'regular' ? `@${selectedUser.username || ''}` : selectedUser.role || 'Lawyer'}
                     </p>
                   </div>
                 </div>
@@ -914,9 +942,7 @@ useEffect(() => {
                       <div className="min-w-0 flex-1">
                         <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Role</p>
                         <span className={`inline-flex px-3 py-1 text-xs font-medium rounded-md ${
-                          selectedUser.isAdmin
-                            ? 'bg-purple-100 text-purple-700'
-                            : 'bg-gray-200 text-gray-700'
+                          selectedUser.isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-gray-200 text-gray-700'
                         }`}>
                           {selectedUser.isAdmin ? 'Admin' : 'User'}
                         </span>
@@ -939,105 +965,15 @@ useEffect(() => {
                     <div className="min-w-0 flex-1">
                       <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Created</p>
                       <p className="text-sm font-medium text-gray-900">
-                        {selectedUser.createdAt
-                          ? new Date(selectedUser.createdAt).toLocaleDateString('en-US', { 
-                              month: 'long', 
-                              day: 'numeric', 
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })
-                          : '—'}
+                        {selectedUser.createdAt ? new Date(selectedUser.createdAt).toLocaleDateString('en-US', {
+                          month: 'long', day: 'numeric', year: 'numeric'
+                        }) : '—'}
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Lawyer Specific Information */}
-              {activeTab === 'lawyers' && (
-                <>
-                  {selectedUser.practiceAreas && selectedUser.practiceAreas.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Practice Areas</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedUser.practiceAreas.map((area, idx) => (
-                          <span
-                            key={idx}
-                            className="inline-flex px-3 py-1.5 text-sm font-medium bg-blue-50 text-blue-700 rounded-lg border border-blue-100"
-                          >
-                            {area}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedUser.officeAddress && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Office Address</h3>
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg">
-                        <FiMapPin className="text-purple-600 text-lg flex-shrink-0 mt-0.5" />
-                        <p className="text-sm text-gray-700 leading-relaxed">{selectedUser.officeAddress}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedUser.bio && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Bio</h3>
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg">
-                        <FiFileText className="text-purple-600 text-lg flex-shrink-0 mt-0.5" />
-                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{selectedUser.bio}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedUser.languages && selectedUser.languages.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Languages</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedUser.languages.map((lang, idx) => (
-                          <span
-                            key={idx}
-                            className="inline-flex px-3 py-1.5 text-sm font-medium bg-green-50 text-green-700 rounded-lg border border-green-100"
-                          >
-                            <FiGlobe className="inline mr-1.5 text-xs" />
-                            {lang}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedUser.experienceYears && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Experience</h3>
-                      <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
-                        <FiBriefcase className="text-purple-600 text-lg flex-shrink-0" />
-                        <p className="text-sm font-medium text-gray-900">
-                          {selectedUser.experienceYears} {selectedUser.experienceYears === 1 ? 'year' : 'years'} of experience
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Regular User Additional Info */}
-              {activeTab === 'regular' && selectedUser.photoUrl && (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Profile Photo</h3>
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <img 
-                      src={selectedUser.photoUrl} 
-                      alt={selectedUser.fullName}
-                      className="w-32 h-32 object-cover rounded-lg"
-                      onError={(e) => { e.target.style.display = 'none'; }}
-                    />
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Footer Actions */}
@@ -1069,3 +1005,4 @@ useEffect(() => {
     </>
   );
 }
+
