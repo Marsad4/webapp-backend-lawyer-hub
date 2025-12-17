@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiFileText, FiImage, FiUpload, FiX, FiUploadCloud } from 'react-icons/fi';
 
@@ -16,17 +16,8 @@ export default function BookUploadModal({ isOpen, onClose, API_BASE, showToast, 
   const pdfInputRef = useRef(null);
   const posterInputRef = useRef(null);
 
-  /* eslint-disable-next-line react-hooks/exhaustive-deps */
-useEffect(() => {
-    if (!isOpen) {
-      resetForm();
-    }
-    return () => {
-      if (posterPreview) URL.revokeObjectURL(posterPreview);
-    };
-  }, [isOpen, posterPreview]);
-
-  const resetForm = () => {
+  // useCallback so resetForm has stable identity for useEffect deps
+  const resetForm = useCallback(() => {
     setTitle('');
     setAuthor('');
     setDescription('');
@@ -34,12 +25,28 @@ useEffect(() => {
     if (posterInputRef.current) posterInputRef.current.value = null;
     setPdfFile(null);
     if (posterPreview) {
-      URL.revokeObjectURL(posterPreview);
+      try {
+        URL.revokeObjectURL(posterPreview);
+      } catch (_) {}
       setPosterPreview(null);
     }
     setPosterFile(null);
     setProgress(0);
-  };
+  }, [posterPreview]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      resetForm();
+    }
+    // cleanup poster preview when component unmounts or posterPreview changes
+    return () => {
+      if (posterPreview) {
+        try {
+          URL.revokeObjectURL(posterPreview);
+        } catch (_) {}
+      }
+    };
+  }, [isOpen, posterPreview, resetForm]);
 
   const handlePdfChange = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -84,7 +91,11 @@ useEffect(() => {
       if (posterInputRef.current) posterInputRef.current.value = null;
       return;
     }
-    if (posterPreview) URL.revokeObjectURL(posterPreview);
+    if (posterPreview) {
+      try {
+        URL.revokeObjectURL(posterPreview);
+      } catch (_) {}
+    }
     const previewUrl = URL.createObjectURL(f);
     setPosterPreview(previewUrl);
     setPosterFile(f);
@@ -93,7 +104,9 @@ useEffect(() => {
   const removePoster = () => {
     if (posterInputRef.current) posterInputRef.current.value = null;
     if (posterPreview) {
-      URL.revokeObjectURL(posterPreview);
+      try {
+        URL.revokeObjectURL(posterPreview);
+      } catch (_) {}
       setPosterPreview(null);
     }
     setPosterFile(null);
@@ -384,3 +397,4 @@ useEffect(() => {
     </div>
   );
 }
+

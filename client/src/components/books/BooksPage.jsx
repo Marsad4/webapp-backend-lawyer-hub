@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { FiEdit, FiTrash2, FiFileText, FiImage, FiX, FiSave, FiPlus, FiCalendar } from 'react-icons/fi';
 import BookUploadModal from './BookUploadModal';
 
@@ -20,19 +20,8 @@ export default function BooksPage({ API_BASE, showToast }) {
   const [newPosterFile, setNewPosterFile] = useState(null);
   const [posterPreview, setPosterPreview] = useState(null);
 
-  /* eslint-disable-next-line react-hooks/exhaustive-deps */
-useEffect(() => {
-    fetchBooks();
-  }, []);
-
-  /* eslint-disable-next-line react-hooks/exhaustive-deps */
-useEffect(() => {
-    return () => {
-      if (posterPreview) URL.revokeObjectURL(posterPreview);
-    };
-  }, [posterPreview]);
-
-  async function fetchBooks() {
+  // fetchBooks memoized so effect can depend on it safely
+  const fetchBooks = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/books`);
@@ -45,7 +34,21 @@ useEffect(() => {
     } finally {
       setLoading(false);
     }
-  }
+  }, [API_BASE, showToast]);
+
+  useEffect(() => {
+    fetchBooks();
+  }, [fetchBooks]);
+
+  useEffect(() => {
+    return () => {
+      if (posterPreview) {
+        try {
+          URL.revokeObjectURL(posterPreview);
+        } catch (_) {}
+      }
+    };
+  }, [posterPreview]);
 
   function openEdit(book) {
     setEditing(book);
@@ -62,7 +65,11 @@ useEffect(() => {
   function closeEdit() {
     setEditing(null);
     setProgress(0);
-    if (posterPreview) URL.revokeObjectURL(posterPreview);
+    if (posterPreview) {
+      try {
+        URL.revokeObjectURL(posterPreview);
+      } catch (_) {}
+    }
     setPosterPreview(null);
   }
 
@@ -91,7 +98,11 @@ useEffect(() => {
       e.target.value = null;
       return;
     }
-    if (posterPreview) URL.revokeObjectURL(posterPreview);
+    if (posterPreview) {
+      try {
+        URL.revokeObjectURL(posterPreview);
+      } catch (_) {}
+    }
     setPosterPreview(URL.createObjectURL(f));
     setNewPosterFile(f);
   }
@@ -444,3 +455,4 @@ useEffect(() => {
     </>
   );
 }
+
