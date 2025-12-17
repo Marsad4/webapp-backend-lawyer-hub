@@ -10,7 +10,6 @@ permissions:
   contents: read
   packages: write
 
-# static env values only (no secrets here)
 env:
   FRONTEND_DIR: client
   BACKEND_DIR: backend
@@ -69,7 +68,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-test
     env:
-      # registry references moved to job-level env (allowed)
       IMAGE_REGISTRY: ${{ secrets.REGISTRY }}
       FRONTEND_IMAGE: ${{ secrets.REGISTRY }}/finaldevops-frontend
       BACKEND_IMAGE: ${{ secrets.REGISTRY }}/finaldevops-backend
@@ -118,24 +116,20 @@ jobs:
       IMAGE_REGISTRY: ${{ secrets.REGISTRY }}
       FRONTEND_IMAGE: ${{ secrets.REGISTRY }}/finaldevops-frontend
       BACKEND_IMAGE: ${{ secrets.REGISTRY }}/finaldevops-backend
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup kubectl (install)
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'latest'
-
-      - name: Restore kubeconfig (from secret if present)
-        # always parses; actual work runs only if KUBE_CONFIG_DATA exists
+      - name: Restore kubeconfig (if provided)
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
         run: |
           if [ -n "$KUBE_CONFIG_DATA" ]; then
             echo "$KUBE_CONFIG_DATA" | base64 --decode > kubeconfig
             export KUBECONFIG=$PWD/kubeconfig
-            kubectl config view
+            kubectl config view || true
           else
             echo "KUBE_CONFIG_DATA not set — skipping kubeconfig restore"
           fi
@@ -161,25 +155,17 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
         run: |
           if [ -n "$SSH_PRIVATE_KEY" ] && [ -n "$DEPLOY_HOST" ] && [ -n "$DEPLOY_USER" ]; then
-            echo "Preparing SSH key..."
             mkdir -p ~/.ssh
             echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
             chmod 600 ~/.ssh/id_rsa
-            # ensure host key checking won't block for first-run (optional, use with caution)
-            echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
+            printf "Host *\n  StrictHostKeyChecking no\n" > ~/.ssh/config
 
-            echo "Running remote deploy via ssh..."
-            ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa "$DEPLOY_USER@$DEPLOY_HOST" -p "${DEPLOY_PORT:-22}" <<'SSH_CMDS'
-docker login -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWORD" "$IMAGE_REGISTRY"
-docker pull "$BACKEND_IMAGE:latest"
-docker pull "$FRONTEND_IMAGE:latest"
-# change path below to the remote compose file location
-docker-compose -f /path/to/remote/docker-compose.yml up -d --remove-orphans
-SSH_CMDS
+            ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "docker login -u '${REGISTRY_USERNAME}' -p '${REGISTRY_PASSWORD}' '${IMAGE_REGISTRY}' && \
+               docker pull '${BACKEND_IMAGE}:latest' && docker pull '${FRONTEND_IMAGE}:latest' && \
+               docker-compose -f /path/to/remote/docker-compose.yml up -d --remove-orphans"
           else
             echo "SSH_PRIVATE_KEY or DEPLOY_HOST/DEPLOY_USER not set — skipping SSH deploy"
           fi
